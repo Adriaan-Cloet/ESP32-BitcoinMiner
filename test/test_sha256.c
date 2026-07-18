@@ -1,5 +1,5 @@
 /*
- * Phase 0 test bench.
+ * Phase 0 test bench for SHA-256.
  *
  * Two layers of tests:
  *
@@ -13,76 +13,11 @@
  * this can ever work.
  */
 
-#include <stdio.h>
-#include <string.h>
+#include "test_util.h"
 
 #include "../core/sha256_ref.h"
 
-static int failures = 0;
-
-/* --- Small helpers -------------------------------------------------------- */
-
-/* Parse a hex string into bytes. Returns the number of bytes written. */
-static size_t hex_to_bytes(const char *hex, uint8_t *out, size_t out_size)
-{
-    size_t n = 0;
-
-    while (hex[0] && hex[1] && n < out_size) {
-        unsigned value;
-        if (sscanf(hex, "%2x", &value) != 1) {
-            break;
-        }
-        out[n++] = (uint8_t)value;
-        hex += 2;
-    }
-    return n;
-}
-
-static void bytes_to_hex(const uint8_t *data, size_t len, char *out)
-{
-    static const char digits[] = "0123456789abcdef";
-    size_t i;
-
-    for (i = 0; i < len; i++) {
-        out[i * 2 + 0] = digits[data[i] >> 4];
-        out[i * 2 + 1] = digits[data[i] & 0x0f];
-    }
-    out[len * 2] = '\0';
-}
-
-/*
- * Reverse a byte array in place.
- *
- * Bitcoin displays hashes in the reverse of their internal byte order. The
- * internal order is what you hash and compare against the target; the display
- * order is what block explorers show. Mixing these up is the single most
- * common source of confusion in this codebase, so the conversion is always
- * explicit and never implicit.
- */
-static void reverse_bytes(uint8_t *data, size_t len)
-{
-    size_t i;
-
-    for (i = 0; i < len / 2; i++) {
-        uint8_t tmp        = data[i];
-        data[i]            = data[len - 1 - i];
-        data[len - 1 - i]  = tmp;
-    }
-}
-
-static void check(const char *name, const char *got, const char *want)
-{
-    if (strcmp(got, want) == 0) {
-        printf("  PASS  %s\n", name);
-    } else {
-        printf("  FAIL  %s\n", name);
-        printf("        expected: %s\n", want);
-        printf("        got:      %s\n", got);
-        failures++;
-    }
-}
-
-/* --- Test 1: NIST FIPS 180-4 vectors -------------------------------------- */
+/* --- NIST FIPS 180-4 vectors ---------------------------------------------- */
 
 static void test_nist_vectors(void)
 {
@@ -122,7 +57,7 @@ static void test_nist_vectors(void)
     }
 }
 
-/* --- Test 2: a long message, to exercise multi-block streaming ------------ */
+/* --- Multi-block streaming ------------------------------------------------ */
 
 static void test_long_message(void)
 {
@@ -148,7 +83,7 @@ static void test_long_message(void)
           "cdc76e5c9914fb9281a1c7e284d73e67f1809a48a497200e046d39ccc7112cd0");
 }
 
-/* --- Test 3: Bitcoin block 125552, the one that really matters ------------ */
+/* --- Bitcoin block 125552, the one that really matters -------------------- */
 
 static void test_block_125552(void)
 {
@@ -189,7 +124,7 @@ static void test_block_125552(void)
     header_len = hex_to_bytes(header_hex, header, sizeof(header));
     if (header_len != 80) {
         printf("  FAIL  header is %zu bytes, expected 80\n", header_len);
-        failures++;
+        test_failures++;
         return;
     }
     printf("  PASS  header is exactly 80 bytes\n");
@@ -208,19 +143,12 @@ static void test_block_125552(void)
 
 int main(void)
 {
-    printf("Phase 0 test bench\n");
+    printf("SHA-256 test bench\n");
     printf("==================\n\n");
 
     test_nist_vectors();
     test_long_message();
     test_block_125552();
 
-    printf("\n");
-    if (failures == 0) {
-        printf("All tests passed.\n");
-        return 0;
-    }
-
-    printf("%d test(s) FAILED.\n", failures);
-    return 1;
+    return test_report();
 }
