@@ -12,11 +12,17 @@ add_compile_options(-Wall -Wextra -Wpedantic -Werror)
 # compile unchanged for the host and for the ESP32.
 add_library(miner_core
     core/sha256_ref.c
+    core/target.c
 )
 target_include_directories(miner_core PUBLIC core)
 
 # Host-only test bench.
 enable_testing()
+
 add_executable(test_sha256 test/test_sha256.c)
 target_link_libraries(test_sha256 PRIVATE miner_core)
 add_test(NAME sha256 COMMAND test_sha256)
+
+add_executable(test_target test/test_target.c)
+target_link_libraries(test_target PRIVATE miner_core)
+add_test(NAME target COMMAND test_target)
