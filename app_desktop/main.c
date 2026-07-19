@@ -186,8 +186,14 @@ int main(void)
                            job.job_id, job.clean_jobs ? "yes" : "no");
                 }
             } else if (stratum_parse_result(line, &rid, &accepted)) {
-                printf("%s (id %d)\n",
-                       accepted ? "share ACCEPTED" : "share rejected", rid);
+                /* id 2 is the authorize acknowledgement; submit ids start at
+                 * 100, so anything else here is a share result. */
+                if (rid == 2) {
+                    printf("authorized: %s\n", accepted ? "yes" : "no");
+                } else {
+                    printf("%s (id %d)\n",
+                           accepted ? "share ACCEPTED" : "share rejected", rid);
+                }
             } else {
                 printf("<< %s\n", line);
             }
