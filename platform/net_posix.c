@@ -1,12 +1,14 @@
 /*
  * POSIX implementation of the line-oriented TCP client. The feature-test macro
- * below exposes getaddrinfo and friends under -std=c11, which otherwise hides
- * them.
+ * below exposes getaddrinfo, fcntl and friends under -std=c11, which otherwise
+ * hides them.
  */
 #define _POSIX_C_SOURCE 200112L
 
 #include "net_posix.h"
 
+#include <errno.h>
+#include <fcntl.h>
 #include <string.h>
 #include <unistd.h>
 #include <sys/types.h>
@@ -75,6 +77,37 @@ bool net_send_line(net_conn_t *conn, const char *line)
            send_all(conn->fd, "\n", 1);
 }
 
+/*
+ * Pull one complete line out of the buffer if there is one. Returns 1 and fills
+ * out (without the newline, null terminated, trailing CR stripped) when a line
+ * is available, 0 when the buffer has no newline yet, and -1 when a line is too
+ * long for out. This is the shared core of both the blocking and non-blocking
+ * readers; only the way they obtain more bytes differs.
+ */
+static int take_line(net_conn_t *conn, char *out, size_t out_size)
+{
+    for (size_t i = 0; i < conn->len; i++) {
+        if (conn->buf[i] != '\n') {
+            continue;
+        }
+        size_t line_len = i;
+        if (line_len > 0 && conn->buf[line_len - 1] == '\r') {
+            line_len--;
+        }
+        if (line_len + 1 > out_size) {
+            return -1;
+        }
+        memcpy(out, conn->buf, line_len);
+        out[line_len] = '\0';
+
+        size_t consumed = i + 1;
+        memmove(conn->buf, conn->buf + consumed, conn->len - consumed);
+        conn->len -= consumed;
+        return 1;
+    }
+    return 0;
+}
+
 int net_recv_line(net_conn_t *conn, char *out, size_t out_size)
 {
     if (conn == NULL || out == NULL || out_size == 0) {
@@ -82,42 +115,64 @@ int net_recv_line(net_conn_t *conn, char *out, size_t out_size)
     }
 
     for (;;) {
-        /* Is a complete line already buffered? */
-        for (size_t i = 0; i < conn->len; i++) {
-            if (conn->buf[i] != '\n') {
-                continue;
-            }
-            size_t line_len = i;
-            if (line_len > 0 && conn->buf[line_len - 1] == '\r') {
-                line_len--; /* strip CR from a CRLF terminator */
-            }
-            if (line_len + 1 > out_size) {
-                return -1;
-            }
-            memcpy(out, conn->buf, line_len);
-            out[line_len] = '\0';
-
-            /* Shift whatever followed the newline to the front of the buffer. */
-            size_t consumed = i + 1;
-            memmove(conn->buf, conn->buf + consumed, conn->len - consumed);
-            conn->len -= consumed;
-            return 1;
+        int taken = take_line(conn, out, out_size);
+        if (taken != 0) {
+            return taken; /* 1 on success, -1 on an over-long line */
         }
-
         if (conn->len == sizeof conn->buf) {
-            return -1; /* no newline in a full buffer: line too long */
+            return -1;
         }
-
         ssize_t r = recv(conn->fd, conn->buf + conn->len,
                          sizeof conn->buf - conn->len, 0);
         if (r == 0) {
-            return 0; /* peer closed */
+            return 0;
         }
         if (r < 0) {
             return -1;
         }
         conn->len += (size_t)r;
     }
+}
+
+bool net_set_nonblocking(net_conn_t *conn)
+{
+    if (conn == NULL) {
+        return false;
+    }
+    int flags = fcntl(conn->fd, F_GETFL, 0);
+    if (flags < 0) {
+        return false;
+    }
+    return fcntl(conn->fd, F_SETFL, flags | O_NONBLOCK) == 0;
+}
+
+int net_poll_line(net_conn_t *conn, char *out, size_t out_size)
+{
+    if (conn == NULL || out == NULL || out_size == 0) {
+        return -1;
+    }
+
+    int taken = take_line(conn, out, out_size);
+    if (taken != 0) {
+        return taken;
+    }
+    if (conn->len == sizeof conn->buf) {
+        return -1;
+    }
+
+    ssize_t r = recv(conn->fd, conn->buf + conn->len,
+                     sizeof conn->buf - conn->len, 0);
+    if (r == 0) {
+        return -1; /* peer closed */
+    }
+    if (r < 0) {
+        if (errno == EAGAIN || errno == EWOULDBLOCK) {
+            return 0; /* nothing to read right now */
+        }
+        return -1;
+    }
+    conn->len += (size_t)r;
+    return take_line(conn, out, out_size);
 }
 
 void net_close(net_conn_t *conn)

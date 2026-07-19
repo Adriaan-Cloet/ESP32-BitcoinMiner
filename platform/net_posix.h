@@ -37,6 +37,22 @@ bool net_connect(net_conn_t *conn, const char *host, const char *port);
 bool net_send_line(net_conn_t *conn, const char *line);
 
 /*
+ * Switch the connection to non-blocking mode. After this, net_recv_line must
+ * not be used (it would busy-return); use net_poll_line instead. Done once,
+ * after the blocking handshake, so the mining loop can read jobs without
+ * stalling. Returns false on failure.
+ */
+bool net_set_nonblocking(net_conn_t *conn);
+
+/*
+ * Non-blocking line read for the mining loop. Returns:
+ *    1  a line was read into out
+ *    0  no complete line is available right now (keep mining)
+ *   -1  the connection was closed or errored
+ */
+int net_poll_line(net_conn_t *conn, char *out, size_t out_size);
+
+/*
  * Read the next '\n'-terminated line into out, without the newline and null
  * terminated. A trailing '\r' (CRLF) is stripped. Blocks until a full line is
  * available. Returns:

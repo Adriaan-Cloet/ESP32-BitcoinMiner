@@ -22,6 +22,15 @@
  */
 #define MINING_ADDRESS "bc1qexampleaddressreplacewithyourown00000"
 
+/*
+ * The scriptPubKey your address decodes to, as hex. The miner searches for this
+ * inside the pool's coinbase to prove the block reward is paid to you and not to
+ * someone else. For a bech32 P2WPKH address it is "0014" + the 20-byte key hash;
+ * your wallet (Sparrow: right-click the address, or the address details) shows
+ * it. Leave the example value and the check simply reports "no".
+ */
+#define MINING_SCRIPTPUBKEY "0014000000000000000000000000000000000000000000"
+
 /* Identifies this miner to the pool in mining.subscribe. Purely cosmetic. */
 #define USER_AGENT     "esp32-solo-miner/0.1"
 
