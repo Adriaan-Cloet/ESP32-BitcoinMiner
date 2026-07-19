@@ -24,6 +24,7 @@ add_library(miner_core
     core/sha256_ref.c
     core/target.c
     core/merkle.c
+    core/header.c
     core/stratum_proto.c
 )
 target_include_directories(miner_core PUBLIC core)
@@ -48,6 +49,10 @@ add_test(NAME target COMMAND test_target)
 add_executable(test_merkle test/test_merkle.c)
 target_link_libraries(test_merkle PRIVATE miner_core)
 add_test(NAME merkle COMMAND test_merkle)
+
+add_executable(test_header test/test_header.c)
+target_link_libraries(test_header PRIVATE miner_core)
+add_test(NAME header COMMAND test_header)
 
 add_executable(test_stratum_proto test/test_stratum_proto.c)
 target_link_libraries(test_stratum_proto PRIVATE miner_core)
