@@ -23,6 +23,72 @@ static bool copy_str_field(const cJSON *item, char *dst, size_t dst_size)
     return true;
 }
 
+/*
+ * Render a cJSON object to out and dispose of it. Owns root: it is always freed,
+ * whether the copy succeeds or not, so callers never leak on the error path.
+ */
+static int print_and_copy(cJSON *root, char *out, size_t out_size)
+{
+    char *json = cJSON_PrintUnformatted(root);
+    cJSON_Delete(root);
+    if (json == NULL) {
+        return -1;
+    }
+    size_t len = strlen(json);
+    if (len + 1 > out_size) {
+        cJSON_free(json);
+        return -1;
+    }
+    memcpy(out, json, len + 1);
+    cJSON_free(json);
+    return (int)len;
+}
+
+int stratum_serialize_subscribe(int id, const char *user_agent,
+                                char *out, size_t out_size)
+{
+    if (user_agent == NULL || out == NULL) {
+        return -1;
+    }
+    cJSON *root = cJSON_CreateObject();
+    if (root == NULL) {
+        return -1;
+    }
+    cJSON_AddNumberToObject(root, "id", id);
+    cJSON_AddStringToObject(root, "method", "mining.subscribe");
+    cJSON *params = cJSON_AddArrayToObject(root, "params");
+    if (params == NULL) {
+        cJSON_Delete(root);
+        return -1;
+    }
+    cJSON_AddItemToArray(params, cJSON_CreateString(user_agent));
+    return print_and_copy(root, out, out_size);
+}
+
+int stratum_serialize_authorize(int id, const char *btc_address,
+                                const char *password, char *out, size_t out_size)
+{
+    if (btc_address == NULL || password == NULL || out == NULL) {
+        return -1;
+    }
+    cJSON *root = cJSON_CreateObject();
+    if (root == NULL) {
+        return -1;
+    }
+    cJSON_AddNumberToObject(root, "id", id);
+    cJSON_AddStringToObject(root, "method", "mining.authorize");
+    cJSON *params = cJSON_AddArrayToObject(root, "params");
+    if (params == NULL) {
+        cJSON_Delete(root);
+        return -1;
+    }
+    /* Username is the BTC payout address; the password is unused by solo pools
+     * but the field is mandatory, so "x" is the convention. */
+    cJSON_AddItemToArray(params, cJSON_CreateString(btc_address));
+    cJSON_AddItemToArray(params, cJSON_CreateString(password));
+    return print_and_copy(root, out, out_size);
+}
+
 bool stratum_parse_notify(const char *json_line, stratum_job_t *job)
 {
     if (json_line == NULL || job == NULL) {
@@ -84,6 +150,92 @@ bool stratum_parse_notify(const char *json_line, stratum_job_t *job)
         goto done;
     }
     job->clean_jobs = cJSON_IsTrue(clean);
+
+    ok = true;
+
+done:
+    cJSON_Delete(root);
+    return ok;
+}
+
+bool stratum_parse_subscribe_result(const char *json_line, stratum_subscribe_t *sub)
+{
+    if (json_line == NULL || sub == NULL) {
+        return false;
+    }
+
+    cJSON *root = cJSON_Parse(json_line);
+    if (root == NULL) {
+        return false;
+    }
+
+    bool ok = false;
+
+    const cJSON *error  = cJSON_GetObjectItemCaseSensitive(root, "error");
+    const cJSON *result = cJSON_GetObjectItemCaseSensitive(root, "result");
+
+    /* A populated error field means the subscribe failed. */
+    if (error != NULL && !cJSON_IsNull(error)) {
+        goto done;
+    }
+
+    /*
+     * result is [subscription_details, extranonce1, extranonce2_size].
+     * The details at [0] are the subscription ids, which the miner does not use.
+     */
+    if (!cJSON_IsArray(result) || cJSON_GetArraySize(result) < 3) {
+        goto done;
+    }
+
+    if (!copy_str_field(cJSON_GetArrayItem(result, 1),
+                        sub->extranonce1, sizeof sub->extranonce1)) {
+        goto done;
+    }
+
+    const cJSON *e2 = cJSON_GetArrayItem(result, 2);
+    if (!cJSON_IsNumber(e2) || e2->valueint < 0) {
+        goto done;
+    }
+    sub->extranonce2_size = (size_t)e2->valueint;
+
+    ok = true;
+
+done:
+    cJSON_Delete(root);
+    return ok;
+}
+
+bool stratum_parse_set_difficulty(const char *json_line, double *difficulty)
+{
+    if (json_line == NULL || difficulty == NULL) {
+        return false;
+    }
+
+    cJSON *root = cJSON_Parse(json_line);
+    if (root == NULL) {
+        return false;
+    }
+
+    bool ok = false;
+
+    const cJSON *method = cJSON_GetObjectItemCaseSensitive(root, "method");
+    const cJSON *params = cJSON_GetObjectItemCaseSensitive(root, "params");
+
+    if (!cJSON_IsString(method) ||
+        strcmp(method->valuestring, "mining.set_difficulty") != 0) {
+        goto done;
+    }
+    if (!cJSON_IsArray(params) || cJSON_GetArraySize(params) < 1) {
+        goto done;
+    }
+
+    const cJSON *d = cJSON_GetArrayItem(params, 0);
+    if (!cJSON_IsNumber(d)) {
+        goto done;
+    }
+    /* Difficulty can be fractional (pools set it well below 1 for tiny miners),
+     * so it is a double, not an integer. */
+    *difficulty = d->valuedouble;
 
     ok = true;
 

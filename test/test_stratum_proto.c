@@ -1,16 +1,90 @@
 /*
- * Tests for the Stratum mining.notify parser.
+ * Tests for the Stratum protocol layer: serialising the requests the miner
+ * sends and parsing the messages the pool sends back. No sockets involved, so
+ * every case is a fixed string with a known-good expectation.
  *
- * The input is a single, real-shaped mining.notify line. Each field carries a
- * distinct, recognisable value so a mis-indexed array element shows up at once
- * instead of hiding behind plausible-looking hex.
+ * The notify input uses a distinct, recognisable value per field so a
+ * mis-indexed array element shows up at once instead of hiding behind
+ * plausible-looking hex.
  */
 #include <stdio.h>
 
 #include "stratum_proto.h"
 #include "test_util.h"
 
-int main(void)
+static void test_serialise(void)
+{
+    printf("stratum_proto: serialise\n");
+
+    char buf[256];
+
+    int n = stratum_serialize_subscribe(1, "cloetminer/0.1", buf, sizeof buf);
+    check_bool("subscribe returns length", n > 0, 1);
+    check("subscribe json", buf,
+          "{\"id\":1,\"method\":\"mining.subscribe\",\"params\":[\"cloetminer/0.1\"]}");
+
+    /* A dummy worker name on purpose: the real payout address never lives in
+     * the repo, it comes from config.h at runtime. */
+    n = stratum_serialize_authorize(2, "bc1qtestworker", "x", buf, sizeof buf);
+    check_bool("authorize returns length", n > 0, 1);
+    check("authorize json", buf,
+          "{\"id\":2,\"method\":\"mining.authorize\",\"params\":[\"bc1qtestworker\",\"x\"]}");
+
+    char tiny[8];
+    check_bool("subscribe rejects a small buffer",
+               stratum_serialize_subscribe(1, "cloetminer/0.1", tiny, sizeof tiny) < 0, 1);
+}
+
+static void test_subscribe_result(void)
+{
+    printf("stratum_proto: subscribe result\n");
+
+    const char *ok_reply =
+        "{\"id\":1,\"result\":["
+        "[[\"mining.set_difficulty\",\"1\"],[\"mining.notify\",\"ae6812eb\"]],"
+        "\"081000\",4],\"error\":null}";
+
+    stratum_subscribe_t sub;
+    check_bool("parses subscribe result",
+               stratum_parse_subscribe_result(ok_reply, &sub), 1);
+    check("extranonce1", sub.extranonce1, "081000");
+
+    char e2[16];
+    snprintf(e2, sizeof e2, "%zu", sub.extranonce2_size);
+    check("extranonce2_size", e2, "4");
+
+    const char *err_reply =
+        "{\"id\":1,\"result\":null,\"error\":[20,\"Other/unknown\",null]}";
+    check_bool("rejects an error reply",
+               stratum_parse_subscribe_result(err_reply, &sub), 0);
+}
+
+static void test_set_difficulty(void)
+{
+    printf("stratum_proto: set_difficulty\n");
+
+    double diff = 0.0;
+    check_bool("parses integer difficulty",
+               stratum_parse_set_difficulty(
+                   "{\"id\":null,\"method\":\"mining.set_difficulty\",\"params\":[500]}",
+                   &diff), 1);
+    char db[32];
+    snprintf(db, sizeof db, "%g", diff);
+    check("difficulty 500", db, "500");
+
+    check_bool("parses fractional difficulty",
+               stratum_parse_set_difficulty(
+                   "{\"id\":null,\"method\":\"mining.set_difficulty\",\"params\":[0.001]}",
+                   &diff), 1);
+    snprintf(db, sizeof db, "%g", diff);
+    check("difficulty 0.001", db, "0.001");
+
+    check_bool("rejects a non-difficulty line",
+               stratum_parse_set_difficulty(
+                   "{\"id\":1,\"result\":true,\"error\":null}", &diff), 0);
+}
+
+static void test_notify(void)
 {
     printf("stratum_proto: mining.notify\n");
 
@@ -58,6 +132,13 @@ int main(void)
 
     /* Malformed JSON must be rejected too. */
     check_bool("rejects garbage", stratum_parse_notify("{not json", &job), 0);
+}
 
+int main(void)
+{
+    test_serialise();
+    test_subscribe_result();
+    test_set_difficulty();
+    test_notify();
     return test_report();
 }

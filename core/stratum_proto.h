@@ -2,9 +2,10 @@
  * Stratum v1 protocol: parsing and serialisation.
  *
  * This layer turns raw JSON-RPC lines into structs and back. It deliberately
- * knows nothing about sockets: feed it a string, get a struct. That makes every
- * message testable with a hardcoded line and a breakpoint, which matters because
- * the ESP32 has no debugger and byte-order bugs are silent.
+ * knows nothing about sockets: feed it a string, get a struct; hand it a struct,
+ * get a string. That makes every message testable with a hardcoded line and a
+ * breakpoint, which matters because the ESP32 has no debugger and byte-order
+ * bugs are silent.
  *
  * Parsing here is faithful, not interpretive. Hex fields are kept as the exact
  * strings the pool sent. Turning them into bytes (and dealing with Bitcoin's
@@ -19,7 +20,7 @@
 
 /*
  * Upper bounds for the fixed-size buffers below. Chosen generously but finite:
- * no heap allocation in the mining path, and the same struct fits on the ESP32.
+ * no heap allocation in the mining path, and the same structs fit on the ESP32.
  * A coinbase half of 512 hex chars is 256 bytes, comfortably above what pools
  * send in practice.
  */
@@ -31,6 +32,7 @@
 #define STRATUM_VERSION_HEX         8    /* 4 bytes */
 #define STRATUM_NBITS_HEX           8    /* 4 bytes */
 #define STRATUM_NTIME_HEX           8    /* 4 bytes */
+#define STRATUM_EXTRANONCE1_HEX_MAX 32   /* up to 16 bytes */
 
 /*
  * A mining job as delivered by mining.notify. All hex fields are stored exactly
@@ -51,10 +53,34 @@ typedef struct {
 } stratum_job_t;
 
 /*
- * Parse one line of JSON into a job. Returns true only if the line is a
- * well-formed mining.notify whose fields all fit the buffers above. On false,
- * the contents of *job are unspecified. The input string is not modified.
+ * The reply to mining.subscribe. extranonce1 is assigned by the pool and is
+ * unique per connection; extranonce2_size is how many bytes the miner then
+ * fills in itself. Together they carve the search space so two miners never
+ * collide without any coordination.
+ */
+typedef struct {
+    char   extranonce1[STRATUM_EXTRANONCE1_HEX_MAX + 1];
+    size_t extranonce2_size;
+} stratum_subscribe_t;
+
+/*
+ * Serialise the two requests the miner sends. Both write JSON only, without a
+ * trailing newline; the transport layer appends the "\n" that frames a Stratum
+ * line. Return the number of characters written, or -1 if the buffer is too
+ * small or an argument is NULL.
+ */
+int stratum_serialize_subscribe(int id, const char *user_agent,
+                                char *out, size_t out_size);
+int stratum_serialize_authorize(int id, const char *btc_address,
+                                const char *password, char *out, size_t out_size);
+
+/*
+ * Parse one line of JSON. Each returns true only if the line is the expected
+ * message and every field it needs is present and fits. On false, the output
+ * argument is left unspecified. The input string is never modified.
  */
 bool stratum_parse_notify(const char *json_line, stratum_job_t *job);
+bool stratum_parse_subscribe_result(const char *json_line, stratum_subscribe_t *sub);
+bool stratum_parse_set_difficulty(const char *json_line, double *difficulty);
 
 #endif /* STRATUM_PROTO_H */
