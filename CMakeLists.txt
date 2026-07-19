@@ -1,5 +1,6 @@
 cmake_minimum_required(VERSION 3.16)
 project(esp32_solo_miner C)
+
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 set(CMAKE_C_STANDARD 11)
@@ -27,6 +28,11 @@ add_library(miner_core
 target_include_directories(miner_core PUBLIC core)
 target_link_libraries(miner_core PUBLIC cjson)
 
+# Platform layer: POSIX sockets. lwIP on the ESP32 also offers BSD sockets, so
+# this file compiles there unchanged.
+add_library(net_posix platform/net_posix.c)
+target_include_directories(net_posix PUBLIC platform)
+
 # Host-only test bench.
 enable_testing()
 
@@ -41,3 +47,12 @@ add_test(NAME target COMMAND test_target)
 add_executable(test_stratum_proto test/test_stratum_proto.c)
 target_link_libraries(test_stratum_proto PRIVATE miner_core)
 add_test(NAME stratum_proto COMMAND test_stratum_proto)
+
+# Desktop app: runs the Stratum handshake against a real pool. It needs config.h
+# (copied from config.example.h), which is gitignored. Only build it when that
+# file exists, so a fresh clone still configures and runs the test bench.
+if(EXISTS "${CMAKE_SOURCE_DIR}/config.h")
+    add_executable(miner_desktop app_desktop/main.c)
+    target_include_directories(miner_desktop PRIVATE "${CMAKE_SOURCE_DIR}")
+    target_link_libraries(miner_desktop PRIVATE miner_core net_posix)
+endif()
