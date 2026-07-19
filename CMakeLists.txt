@@ -26,10 +26,13 @@ add_library(miner_core
     core/merkle.c
     core/header.c
     core/coinbase.c
+    core/difficulty.c
     core/stratum_proto.c
 )
 target_include_directories(miner_core PUBLIC core)
-target_link_libraries(miner_core PUBLIC cjson)
+# m: libm, for the powl/floorl used in difficulty_to_target. On the ESP32 the
+# math functions come from newlib and no explicit link is needed.
+target_link_libraries(miner_core PUBLIC cjson m)
 
 # Platform layer: POSIX sockets. lwIP on the ESP32 also offers BSD sockets, so
 # this file compiles there unchanged.
@@ -58,6 +61,10 @@ add_test(NAME header COMMAND test_header)
 add_executable(test_coinbase test/test_coinbase.c)
 target_link_libraries(test_coinbase PRIVATE miner_core)
 add_test(NAME coinbase COMMAND test_coinbase)
+
+add_executable(test_difficulty test/test_difficulty.c)
+target_link_libraries(test_difficulty PRIVATE miner_core)
+add_test(NAME difficulty COMMAND test_difficulty)
 
 add_executable(test_stratum_proto test/test_stratum_proto.c)
 target_link_libraries(test_stratum_proto PRIVATE miner_core)
