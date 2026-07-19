@@ -1,5 +1,6 @@
 #include "stratum_proto.h"
 
+#include <stdio.h>
 #include <string.h>
 
 #include "cJSON.h"
@@ -86,6 +87,59 @@ int stratum_serialize_authorize(int id, const char *btc_address,
      * but the field is mandatory, so "x" is the convention. */
     cJSON_AddItemToArray(params, cJSON_CreateString(btc_address));
     cJSON_AddItemToArray(params, cJSON_CreateString(password));
+    return print_and_copy(root, out, out_size);
+}
+
+int stratum_serialize_submit(int id, const char *worker, const char *job_id,
+                             const char *extranonce2_hex, const char *ntime_hex,
+                             uint32_t nonce, char *out, size_t out_size)
+{
+    if (worker == NULL || job_id == NULL || extranonce2_hex == NULL ||
+        ntime_hex == NULL || out == NULL) {
+        return -1;
+    }
+
+    /* The nonce goes on the wire as 8 big-endian hex digits of its value. */
+    char nonce_hex[9];
+    snprintf(nonce_hex, sizeof nonce_hex, "%08x", (unsigned)nonce);
+
+    cJSON *root = cJSON_CreateObject();
+    if (root == NULL) {
+        return -1;
+    }
+    cJSON_AddNumberToObject(root, "id", id);
+    cJSON_AddStringToObject(root, "method", "mining.submit");
+    cJSON *params = cJSON_AddArrayToObject(root, "params");
+    if (params == NULL) {
+        cJSON_Delete(root);
+        return -1;
+    }
+    cJSON_AddItemToArray(params, cJSON_CreateString(worker));
+    cJSON_AddItemToArray(params, cJSON_CreateString(job_id));
+    cJSON_AddItemToArray(params, cJSON_CreateString(extranonce2_hex));
+    cJSON_AddItemToArray(params, cJSON_CreateString(ntime_hex));
+    cJSON_AddItemToArray(params, cJSON_CreateString(nonce_hex));
+    return print_and_copy(root, out, out_size);
+}
+
+int stratum_serialize_suggest_difficulty(int id, double difficulty,
+                                         char *out, size_t out_size)
+{
+    if (out == NULL) {
+        return -1;
+    }
+    cJSON *root = cJSON_CreateObject();
+    if (root == NULL) {
+        return -1;
+    }
+    cJSON_AddNumberToObject(root, "id", id);
+    cJSON_AddStringToObject(root, "method", "mining.suggest_difficulty");
+    cJSON *params = cJSON_AddArrayToObject(root, "params");
+    if (params == NULL) {
+        cJSON_Delete(root);
+        return -1;
+    }
+    cJSON_AddItemToArray(params, cJSON_CreateNumber(difficulty));
     return print_and_copy(root, out, out_size);
 }
 
@@ -237,6 +291,36 @@ bool stratum_parse_set_difficulty(const char *json_line, double *difficulty)
      * so it is a double, not an integer. */
     *difficulty = d->valuedouble;
 
+    ok = true;
+
+done:
+    cJSON_Delete(root);
+    return ok;
+}
+
+bool stratum_parse_result(const char *json_line, int *id, bool *accepted)
+{
+    if (json_line == NULL || id == NULL || accepted == NULL) {
+        return false;
+    }
+
+    cJSON *root = cJSON_Parse(json_line);
+    if (root == NULL) {
+        return false;
+    }
+
+    bool ok = false;
+
+    const cJSON *jid    = cJSON_GetObjectItemCaseSensitive(root, "id");
+    const cJSON *result = cJSON_GetObjectItemCaseSensitive(root, "result");
+
+    /* Notifications carry a null id; subscribe carries an array result. Only a
+     * numeric id together with a boolean result is an acknowledgement. */
+    if (!cJSON_IsNumber(jid) || !cJSON_IsBool(result)) {
+        goto done;
+    }
+    *id       = jid->valueint;
+    *accepted = cJSON_IsTrue(result);
     ok = true;
 
 done:

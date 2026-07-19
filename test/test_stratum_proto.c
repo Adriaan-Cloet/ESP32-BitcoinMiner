@@ -84,6 +84,59 @@ static void test_set_difficulty(void)
                    "{\"id\":1,\"result\":true,\"error\":null}", &diff), 0);
 }
 
+static void test_submit(void)
+{
+    printf("stratum_proto: submit and suggest_difficulty\n");
+
+    char buf[256];
+
+    int n = stratum_serialize_submit(4, "bc1qtestworker", "job0001",
+                                     "0000000000000000", "4dd7f5c7",
+                                     0x9546a142u, buf, sizeof buf);
+    check_bool("submit returns length", n > 0, 1);
+    check("submit json", buf,
+          "{\"id\":4,\"method\":\"mining.submit\",\"params\":"
+          "[\"bc1qtestworker\",\"job0001\",\"0000000000000000\",\"4dd7f5c7\",\"9546a142\"]}");
+
+    n = stratum_serialize_suggest_difficulty(3, 1.0, buf, sizeof buf);
+    check_bool("suggest_difficulty returns length", n > 0, 1);
+    check("suggest_difficulty json", buf,
+          "{\"id\":3,\"method\":\"mining.suggest_difficulty\",\"params\":[1]}");
+}
+
+static void test_result(void)
+{
+    printf("stratum_proto: result replies\n");
+
+    int  id       = 0;
+    bool accepted = false;
+
+    check_bool("parses an accepted submit",
+               stratum_parse_result("{\"id\":4,\"result\":true,\"error\":null}",
+                                    &id, &accepted), 1);
+    char id_str[16];
+    snprintf(id_str, sizeof id_str, "%d", id);
+    check("result id", id_str, "4");
+    check_bool("accepted flag is true", accepted, 1);
+
+    check_bool("parses a rejected submit",
+               stratum_parse_result(
+                   "{\"id\":5,\"result\":false,\"error\":[23,\"stale\",null]}",
+                   &id, &accepted), 1);
+    check_bool("accepted flag is false", accepted, 0);
+
+    /* A subscribe reply (array result) is not an acknowledgement. */
+    check_bool("ignores an array result",
+               stratum_parse_result("{\"id\":1,\"result\":[[],\"ab\",4],\"error\":null}",
+                                    &id, &accepted), 0);
+
+    /* A notification (null id) is not an acknowledgement. */
+    check_bool("ignores a notification",
+               stratum_parse_result(
+                   "{\"id\":null,\"method\":\"mining.set_difficulty\",\"params\":[1]}",
+                   &id, &accepted), 0);
+}
+
 static void test_notify(void)
 {
     printf("stratum_proto: mining.notify\n");
@@ -137,8 +190,10 @@ static void test_notify(void)
 int main(void)
 {
     test_serialise();
+    test_submit();
     test_subscribe_result();
     test_set_difficulty();
+    test_result();
     test_notify();
     return test_report();
 }

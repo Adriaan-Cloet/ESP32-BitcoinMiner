@@ -17,6 +17,7 @@
 
 #include <stdbool.h>
 #include <stddef.h>
+#include <stdint.h>
 
 /*
  * Upper bounds for the fixed-size buffers below. Chosen generously but finite:
@@ -64,7 +65,7 @@ typedef struct {
 } stratum_subscribe_t;
 
 /*
- * Serialise the two requests the miner sends. Both write JSON only, without a
+ * Serialise the requests the miner sends. All write JSON only, without a
  * trailing newline; the transport layer appends the "\n" that frames a Stratum
  * line. Return the number of characters written, or -1 if the buffer is too
  * small or an argument is NULL.
@@ -75,6 +76,23 @@ int stratum_serialize_authorize(int id, const char *btc_address,
                                 const char *password, char *out, size_t out_size);
 
 /*
+ * mining.submit params are [worker, job_id, extranonce2, ntime, nonce]. worker
+ * is the same username used to authorize. ntime and extranonce2 are hex strings;
+ * nonce is formatted here as 8 big-endian hex digits, the value that was written
+ * little-endian into the header.
+ */
+int stratum_serialize_submit(int id, const char *worker, const char *job_id,
+                             const char *extranonce2_hex, const char *ntime_hex,
+                             uint32_t nonce, char *out, size_t out_size);
+
+/*
+ * Ask the pool for an easier share difficulty. Pools may honour or ignore it;
+ * the authoritative value is whatever set_difficulty then reports.
+ */
+int stratum_serialize_suggest_difficulty(int id, double difficulty,
+                                         char *out, size_t out_size);
+
+/*
  * Parse one line of JSON. Each returns true only if the line is the expected
  * message and every field it needs is present and fits. On false, the output
  * argument is left unspecified. The input string is never modified.
@@ -82,5 +100,14 @@ int stratum_serialize_authorize(int id, const char *btc_address,
 bool stratum_parse_notify(const char *json_line, stratum_job_t *job);
 bool stratum_parse_subscribe_result(const char *json_line, stratum_subscribe_t *sub);
 bool stratum_parse_set_difficulty(const char *json_line, double *difficulty);
+
+/*
+ * Parse a JSON-RPC result reply of the form {"id":N,"result":<bool>,...}, as
+ * sent to acknowledge authorize and submit. Returns true only when the line has
+ * a numeric id and a boolean result, filling *id and *accepted. A subscribe
+ * reply (result is an array) and a notification (id is null) both return false,
+ * so this cleanly tells acknowledgements apart from everything else.
+ */
+bool stratum_parse_result(const char *json_line, int *id, bool *accepted);
 
 #endif /* STRATUM_PROTO_H */
