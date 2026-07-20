@@ -1,0 +1,16 @@
+# Shared, committed defaults for the ESP32 build. The generated sdkconfig (which
+# contains machine-specific bits) stays out of git; this file does not.
+
+# The board on this project has 4 MB of flash (the rooktest boot log confirmed
+# it). Without this the image header defaults to 2 MB.
+CONFIG_ESPTOOLPY_FLASHSIZE_4MB=y
+CONFIG_ESPTOOLPY_FLASHSIZE="4MB"
+
+# app_main runs the whole handshake with a few kilobytes of static buffers plus
+# lwIP and logging on its stack; give it comfortable headroom.
+CONFIG_ESP_MAIN_TASK_STACK_SIZE=8192
+
+# Run at the full 240 MHz for a bit more hash rate. This is a default frequency,
+# not runtime throttling: never drop the CPU below 80 MHz at runtime or the WiFi
+# stack becomes unreliable.
+CONFIG_ESP_DEFAULT_CPU_FREQ_MHZ_240=y

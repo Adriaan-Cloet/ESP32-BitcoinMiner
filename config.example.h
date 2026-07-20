@@ -15,6 +15,15 @@
 #define POOL_PORT      "21496"
 
 /*
+ * WiFi credentials for the ESP32 build (ignored by the desktop build). Because
+ * config.h is gitignored, these stay off GitHub. Keep the real password in your
+ * password manager, not only here. Ideally use a separate, isolated WiFi network
+ * for the miner (see the VLAN note).
+ */
+#define WIFI_SSID      "your-wifi-name"
+#define WIFI_PASSWORD  "your-wifi-password"
+
+/*
  * Your own bech32 (bc1q...) payout address, taken from your wallet's Receive
  * tab. This is what the pool builds the coinbase output to, and it is sent as
  * the Stratum username. Some pools let you append a worker name as
