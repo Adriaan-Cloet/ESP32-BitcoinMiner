@@ -10,6 +10,11 @@ set(CMAKE_C_STANDARD_REQUIRED ON)
 # compiler is the cheapest reviewer available.
 add_compile_options(-Wall -Wextra -Wpedantic -Werror)
 
+# Optimise. Without a build type CMake compiles at -O0, which for a hash loop is
+# a large and needless handicap: the first speed-up is simply letting the
+# compiler do its job. Correctness is unchanged and still proven by the tests.
+add_compile_options(-O2)
+
 # Vendored cJSON (single file, MIT). On the ESP32 the same parser ships as an
 # ESP-IDF component, so the Stratum code compiles unchanged for both targets.
 # Third-party code is not held to our -Werror standard; we do not patch upstream,

@@ -14,3 +14,7 @@ CONFIG_ESP_MAIN_TASK_STACK_SIZE=8192
 # not runtime throttling: never drop the CPU below 80 MHz at runtime or the WiFi
 # stack becomes unreliable.
 CONFIG_ESP_DEFAULT_CPU_FREQ_MHZ_240=y
+
+# Optimise for performance (-O2). The default targets size/debug, which slows the
+# hash loop. Correctness is unchanged.
+CONFIG_COMPILER_OPTIMIZATION_PERF=y
