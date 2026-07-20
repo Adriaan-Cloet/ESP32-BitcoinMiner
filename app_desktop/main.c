@@ -8,8 +8,8 @@
  *
  * The socket goes non-blocking after the handshake so new jobs and difficulty
  * changes are picked up between batches of nonces without stalling the grind.
- * This is deliberately single-threaded and unoptimised: correctness first, the
- * same core then moves to the ESP32 in phase 2.
+ * This is single-threaded; the inner hash uses the SHA-256 midstate, so only the
+ * second block is recomputed per nonce.
  *
  * nanosleep needs this feature-test macro under -std=c11.
  */
@@ -28,6 +28,7 @@
 #include "header.h"
 #include "merkle.h"
 #include "net_posix.h"
+#include "sha256_fast.h"
 #include "sha256_ref.h"
 #include "stratum_proto.h"
 #include "target.h"
@@ -131,6 +132,8 @@ int main(void)
     stratum_job_t job;
     uint8_t       share_target[TARGET_SIZE];
     uint8_t       header[BLOCK_HEADER_SIZE];
+    uint32_t      midstate[8];      /* SHA-256 state after header bytes 0..63 */
+    uint8_t       tail[16];         /* header bytes 64..79, the nonce is 12..15 */
     uint8_t       branch[STRATUM_MAX_MERKLE_BRANCHES][32];
     size_t        branch_count = 0;
     char          en2[2 * 8 + 1];
@@ -239,19 +242,25 @@ int main(void)
                 have_job = false;
                 continue;
             }
+
+            /* Bytes 0..63 are fixed for this template, so their SHA-256 is done
+             * once here; the nonce lives in the 16-byte tail (bytes 64..79). */
+            sha256_midstate(header, midstate);
+            memcpy(tail, header + 64, 16);
             nonce = 0;
             template_ready = true;
         }
 
-        /* 3. Grind a batch of nonces, only the last four header bytes change. */
+        /* 3. Grind a batch of nonces. Only the nonce moves (tail bytes 12..15);
+         *    the fixed first block is already folded into the midstate. */
         for (unsigned b = 0; b < NONCE_BATCH; b++) {
-            header[76] = (uint8_t)(nonce & 0xff);
-            header[77] = (uint8_t)((nonce >> 8) & 0xff);
-            header[78] = (uint8_t)((nonce >> 16) & 0xff);
-            header[79] = (uint8_t)((nonce >> 24) & 0xff);
+            tail[12] = (uint8_t)(nonce & 0xff);
+            tail[13] = (uint8_t)((nonce >> 8) & 0xff);
+            tail[14] = (uint8_t)((nonce >> 16) & 0xff);
+            tail[15] = (uint8_t)((nonce >> 24) & 0xff);
 
             uint8_t hash[32];
-            sha256d_ref(header, BLOCK_HEADER_SIZE, hash);
+            sha256d_finish(midstate, tail, hash);
             hashes++;
 
             if (meets_target(hash, share_target)) {

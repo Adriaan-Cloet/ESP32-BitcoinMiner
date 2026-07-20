@@ -13,6 +13,7 @@ idf_component_register(
         "main.c"
         "wifi.c"
         "../../core/sha256_ref.c"
+        "../../core/sha256_fast.c"
         "../../core/target.c"
         "../../core/merkle.c"
         "../../core/header.c"

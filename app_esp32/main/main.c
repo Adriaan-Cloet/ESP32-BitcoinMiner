@@ -38,6 +38,7 @@
 #include "header.h"
 #include "merkle.h"
 #include "net_posix.h"
+#include "sha256_fast.h"
 #include "sha256_ref.h"
 #include "stratum_proto.h"
 #include "target.h"
@@ -124,6 +125,8 @@ static void hash_task(void *arg)
     uint64_t en2_counter = 0;
     uint32_t nonce = 0;
     char     en2[2 * 8 + 1];
+    uint32_t midstate[8];   /* SHA-256 state after header bytes 0..63 */
+    uint8_t  tail[16];      /* header bytes 64..79, the nonce is 12..15 */
 
     uint64_t hashes = 0;
     int64_t  last_report = esp_timer_get_time();
@@ -193,19 +196,24 @@ static void hash_task(void *arg)
                 vTaskDelay(pdMS_TO_TICKS(100));
                 continue;
             }
+
+            /* Bytes 0..63 are fixed for this template: fold them into the
+             * midstate once, the nonce lives in the 16-byte tail. */
+            sha256_midstate(header, midstate);
+            memcpy(tail, header + 64, 16);
             nonce = 0;
             have_template = true;
         }
 
-        /* 3. Grind a batch of nonces. */
+        /* 3. Grind a batch of nonces; only the nonce (tail bytes 12..15) moves. */
         for (int b = 0; b < HASH_BATCH; b++) {
-            header[76] = (uint8_t)(nonce & 0xff);
-            header[77] = (uint8_t)((nonce >> 8) & 0xff);
-            header[78] = (uint8_t)((nonce >> 16) & 0xff);
-            header[79] = (uint8_t)((nonce >> 24) & 0xff);
+            tail[12] = (uint8_t)(nonce & 0xff);
+            tail[13] = (uint8_t)((nonce >> 8) & 0xff);
+            tail[14] = (uint8_t)((nonce >> 16) & 0xff);
+            tail[15] = (uint8_t)((nonce >> 24) & 0xff);
 
             uint8_t hash[32];
-            sha256d_ref(header, BLOCK_HEADER_SIZE, hash);
+            sha256d_finish(midstate, tail, hash);
             hashes++;
 
             if (meets_target(hash, target)) {
