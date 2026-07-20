@@ -28,6 +28,7 @@ target_compile_options(cjson PRIVATE -w)
 add_library(miner_core
     core/sha256_ref.c
     core/sha256_fast.c
+    core/sha256_compress.c   # portable C compression (host always uses this)
     core/target.c
     core/merkle.c
     core/header.c
