@@ -1,0 +1,14 @@
+menu "Miner options"
+
+    config MINER_USE_XTENSA_SHA256
+        bool "Use the hand-written Xtensa assembly SHA-256 compression"
+        default n
+        help
+            When enabled, the SHA-256 block compression uses the hand-written
+            Xtensa assembly in core/sha256_compress_xtensa.S. When disabled (the
+            default), the portable C version is used; the compiler schedules it
+            slightly faster, so C is the default. Both live in the tree and this
+            only chooses which one is built. The on-device self-test validates
+            whichever is selected.
+
+endmenu

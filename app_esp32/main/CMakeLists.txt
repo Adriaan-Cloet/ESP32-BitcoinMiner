@@ -9,20 +9,19 @@
 # vendoring keeps the build self-contained and version-proof. ESP-IDF does not
 # apply -Werror to components, so cJSON's own warnings are harmless.
 #
-# SHA-256 compression: pick the portable C or the hand-written Xtensa assembly.
-# Both live in core/ so each is available; flip this one line (or pass
-# -DUSE_XTENSA_SHA256=ON to idf.py) to switch. The C version is the default and
-# the fallback; the assembly only builds for the ESP32.
-option(USE_XTENSA_SHA256 "Use hand-written Xtensa assembly for SHA-256" OFF)
-if(USE_XTENSA_SHA256)
+# SHA-256 compression: portable C (default) or the hand-written Xtensa assembly.
+# Selected through menuconfig ("Miner options" -> "Use the hand-written Xtensa
+# assembly..."), stored in the gitignored sdkconfig. The default is C, so a plain
+# build of the miner needs no choice; both sources live in core/.
+if(CONFIG_MINER_USE_XTENSA_SHA256)
     set(SHA256_COMPRESS "../../core/sha256_compress_xtensa.S")
 else()
     set(SHA256_COMPRESS "../../core/sha256_compress.c")
 endif()
 
-# Build the on-device SHA-256 self-test firmware instead of the miner: it checks
-# the selected compression against the reference over many random headers and
-# prints a throughput number. Pass -DMINER_SELFTEST=ON to idf.py.
+# Dev-only: build the on-device SHA-256 self-test firmware instead of the miner.
+# It checks the selected compression against the reference over many random
+# headers and prints a throughput number. Pass -DMINER_SELFTEST=ON to idf.py.
 option(MINER_SELFTEST "Build the SHA-256 self-test instead of the miner" OFF)
 if(MINER_SELFTEST)
     set(APP_SRC "selftest.c")
