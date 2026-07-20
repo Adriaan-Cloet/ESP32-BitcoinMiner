@@ -22,6 +22,7 @@ target_compile_options(cjson PRIVATE -w)
 # compile unchanged for the host and for the ESP32.
 add_library(miner_core
     core/sha256_ref.c
+    core/sha256_fast.c
     core/target.c
     core/merkle.c
     core/header.c
@@ -45,6 +46,10 @@ enable_testing()
 add_executable(test_sha256 test/test_sha256.c)
 target_link_libraries(test_sha256 PRIVATE miner_core)
 add_test(NAME sha256 COMMAND test_sha256)
+
+add_executable(test_sha256_fast test/test_sha256_fast.c)
+target_link_libraries(test_sha256_fast PRIVATE miner_core)
+add_test(NAME sha256_fast COMMAND test_sha256_fast)
 
 add_executable(test_target test/test_target.c)
 target_link_libraries(test_target PRIVATE miner_core)
